@@ -71,13 +71,13 @@ jobs:
       - name: Combine Coverage
         run: lcov -a ppp-lcov/coverage.lcov -a pp6-lcov/coverage.lcov -o lcov.info
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
   build-win32:
     runs-on: ubuntu-latest
     container:
-      image: jeromerobert/wine-mingw64:1.9.0
+      image: ghcr.io/pdfarranger/wine-mingw64:1.10.0
       options: --user root
     steps:
     - uses: actions/checkout@v4

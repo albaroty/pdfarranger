@@ -1,7 +1,7 @@
 ## About
 
 [![CodeQL](https://github.com/pdfarranger/pdfarranger/workflows/CodeQL/badge.svg)](https://github.com/pdfarranger/pdfarranger/actions?query=workflow%3ACodeQL "Code quality workflow status")
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/1be9c9a69f3a44b79612cc5b2887c0f7)](https://www.codacy.com/gh/pdfarranger/pdfarranger/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=pdfarranger/pdfarranger&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/1be9c9a69f3a44b79612cc5b2887c0f7)](https://app.codacy.com/gh/pdfarranger/pdfarranger/dashboard)
 [![pdfarranger](https://github.com/pdfarranger/pdfarranger/workflows/pdfarranger/badge.svg)](https://github.com/pdfarranger/pdfarranger/actions?query=workflow%3Apdfarranger+branch%3Amain)
 [![codecov](https://codecov.io/gh/pdfarranger/pdfarranger/branch/main/graph/badge.svg)](https://codecov.io/gh/pdfarranger/pdfarranger)
 
@@ -79,36 +79,36 @@ cd pdfarranger
 python3 -m pdfarranger
 ```
 
+For testing see [TESTING.md](TESTING.md).
+
 For Windows see [Win32.md](Win32.md).
+
+For macOS see [macOS.md](macOS.md).
+
 
 ## For translators
 
+Translations are located in the following files:
+
+*   [`po`](po)`/LANG.po` for interface translation strings
+*   [data/com.github.jeromerobert.pdfarranger.metainfo.xml](data/com.github.jeromerobert.pdfarranger.metainfo.xml) for repository integration
+*   [data/com.github.jeromerobert.pdfarranger.desktop](data/com.github.jeromerobert.pdfarranger.desktop) for desktop integration
+
+If you are not comfortable working with git, **you may edit translations directly from Github's web interface**. However, in the normal case
+you would contribute translations by following these steps:
+
 *   Download the main branch (see [For developers](#for-developers))
+*   Checkout a new branch to save your changes: `git checkout -b update-translation-LANG`
+*   Run `po/updatepo.sh LANG`, where `LANG` is the locale you'd like to update
+*   Update your translations in `po/LANG.po` file, and commit them; do not commit changes to `po/pdfarranger.pot` which may have been
+    automatically regenerated
+*   If possible, test your translation to see it in context (see [For developers](#for-developers))
+*   Create a new pull request with your changes to the main branch
 
-*   Run `po/genpot.sh`. The `pot` is an automatically generated file and as such
-    should not be in the repository. It is to make life of some translators
-    easier, but it might be out of sync with the source code. If you can
-    regenerate it before adding or updating a translation, then do it.
+If you are editing mnemonics accelerators (letters preceded by an underscore), here are some additional guidelines. However, if you have no idea what this means, don't worry about it.
+Try to follow these rules by priority order:
 
-*   Translations are in the following files:
-    *   [`po`](po)`/*.po`
-    *   [data/com.github.jeromerobert.pdfarranger.metainfo.xml](data/com.github.jeromerobert.pdfarranger.metainfo.xml)
-    *   [data/com.github.jeromerobert.pdfarranger.desktop](data/com.github.jeromerobert.pdfarranger.desktop)
-
-*   For mnemonics accelerators (letters preceded by an underscore) try to follow
-    those rules by priority order:
-    *   be consistent with other GTK/GNOME software
-    *   pick a unique letter **within that given menu** if possible
-    *   pick the same letter as the original string if available
-    *   pick a strong letter (e.g. in "Search and replace" rather pick `s`, `r` or `p` than `a`)
-
-*   If possible, test your translation to see it in context
-    (see [For developers](#for-developers))
-
-*   Do not include `pdfarranger.pot` (or any `*.po` file which was just
-    automatically regenerated) in your pull request. Submit only the translations
-    you actually updated or added.
-
-*   If you don’t want or can’t use the developers tooling (`git`,
-    `po/genpot.sh`, `python`, …) you can edit, download or upload the `*.po`
-    files from the GitHub web pages.
+*   be consistent with other GTK/GNOME software
+*   pick a unique letter **within that given menu** if possible
+*   pick the same letter as the original string if available
+*   pick a strong letter (e.g. in "Search and replace" rather pick `s`, `r` or `p` than `a`)

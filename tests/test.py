@@ -1,3 +1,4 @@
+import configparser
 import os
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from typing import Tuple
 import shutil
 import packaging.version
 from importlib import metadata
+import warnings
 
 import pikepdf
 
@@ -70,12 +72,6 @@ def check_img2pdf(version):
     except Exception:
         r = False
     return r
-
-
-def have_pikepdf3():
-    return packaging.version.parse(
-        metadata.version("pikepdf")
-    ) >= packaging.version.Version("3")
 
 
 def have_pikepdf8():
@@ -144,6 +140,16 @@ class DogtailManager:
 # dogtail does not support change of X11 server so it must be a singleton
 dogtail_manager = DogtailManager()
 
+def setUpModule():
+    # if we can't kill the dbus process on GHA, let's at least suppress the warning
+    if dogtail_manager.xvfb and "GITHUB_ACTIONS" in os.environ:
+        warnings.filterwarnings("ignore",
+                                f"subprocess {dogtail_manager.xvfb.dbus_proc.pid} is still running",
+                                ResourceWarning)
+
+def tearDownModule():
+    dogtail_manager.kill()
+
 
 class PdfArrangerManager:
     def __init__(self, args=None):
@@ -152,23 +158,33 @@ class PdfArrangerManager:
         cmd = [sys.executable, "-u", "-X", "tracemalloc"]
         if "PDFARRANGER_COVERAGE" in os.environ:
             cmd = cmd + ["-m", "coverage", "run", "--concurrency=thread,multiprocessing", "-a"]
-        self.process = subprocess.Popen(cmd + ["-m", "pdfarranger"] + args)
+        self.process = subprocess.Popen(cmd + ["-m", "pdfarranger"] + args, stdout=subprocess.PIPE)
+
+    def _get_stdout(self):
+        """get the stdout of the pdfarranger process"""
+        return self.process.stdout.read().decode("utf-8")
 
     def kill(self):
+        self.process.stdout.close()
         self.process.kill()
         self.process.wait()
 
 class PdfArrangerTest(unittest.TestCase):
-    LAST=False
-    def _start(self, args=None):
+    def _start(self, args=None, gtk_check=True):
         from dogtail.config import config
         config.searchBackoffDuration = 1
         self.__class__.pdfarranger = PdfArrangerManager(args)
+        if not gtk_check:
+            return
         # check that process is actually running
         self.assertIsNone(self._process().poll())
         self._app()
         # Now let's go faster
         config.searchBackoffDuration = 0.1
+
+    def _get_stdout(self):
+        """get the stdout of the pdfarranger process"""
+        return self.__class__.pdfarranger._get_stdout()
 
     def _app(self):
         """Return the first instance of pdfarranger"""
@@ -216,7 +232,7 @@ class PdfArrangerTest(unittest.TestCase):
 
     def _is_saving(self):
         allstatusbar = self._find_by_role("status bar")
-        statusbar = allstatusbar[0]
+        statusbar = allstatusbar[-1]
         return statusbar.name.startswith("Saving")
 
     def _wait_saving(self):
@@ -228,8 +244,8 @@ class PdfArrangerTest(unittest.TestCase):
     def _status_text(self):
         self._app()
         allstatusbar = self._find_by_role("status bar")
-        # If we have multiple status bar, consider the last one as the one who display the selection
-        statusbar = allstatusbar[-1]
+        # If we have multiple status bar, consider the first one as the one who display the selection
+        statusbar = allstatusbar[0]
         return statusbar.name
 
     def _assert_selected(self, selection):
@@ -239,7 +255,7 @@ class PdfArrangerTest(unittest.TestCase):
         if pageid is not None:
             self._icons()[pageid].click()
             self._wait_cond(lambda: self._status_text().startswith(f"Selected pages: {pageid+1}"))
-        label = " {:.1f}mm \u00D7 {:.1f}mm".format(width, height)
+        label = " {:.1f} mm \u00D7 {:.1f} mm".format(width, height)
         self.assertTrue(self._status_text().endswith("Page Size:" + label))
 
     def _check_file_content(self, filename, expected: Tuple[str]) -> Tuple[bool, str]:
@@ -341,6 +357,8 @@ class PdfArrangerTest(unittest.TestCase):
         app = self._app()
         app.keyCombo("S")
         dialog = app.child(roleName="dialog")
+        relative = self._find_by_role("radio button", dialog)[1]
+        relative.click()
         from dogtail import rawinput
         rawinput.keyCombo("Tab")
         rawinput.typeText(str(scale))
@@ -351,17 +369,20 @@ class PdfArrangerTest(unittest.TestCase):
     def _zoom(widget, n_events, zoom_in):
         """Zoom in/out with ctrl + mouse scroll wheel"""
         from dogtail import rawinput
-        from pyatspi import Registry as registry
-        from pyatspi import KEY_PRESS, KEY_RELEASE
-        code = rawinput.keyNameToKeyCode("Control_L")
-        registry.generateKeyboardEvent(code, None, KEY_PRESS)
-        button = 4 if zoom_in == True else 5
+        button = 4 if zoom_in else 5
+        rawinput.holdKey("Control_L")
         for __ in range(n_events):
             widget.click(button=button)
-            time.sleep(0.1)
-        registry.generateKeyboardEvent(code, None, KEY_RELEASE)
+        rawinput.releaseKey("Control_L")
+
+    def _config(self):
+        """Get config from config file used in test"""
+        config = configparser.ConfigParser()
+        config.read(self.__class__.config_file)
+        return config
 
     def _quit(self):
+        self._app().child(roleName="layered pane").grabFocus()
         self._app().child(roleName="layered pane").keyCombo("<ctrl>q")
 
     def _quit_without_saving(self):
@@ -371,10 +392,24 @@ class PdfArrangerTest(unittest.TestCase):
         # check that process actually exit
         self._process().wait(timeout=22)
 
+    default_config = """
+                     [preferences]
+                     content-loss-warning = False
+                     """
+
     @classmethod
     def setUpClass(cls):
         cls.pdfarranger = None
         cls.tmp = tempfile.mkdtemp()
+        os.environ["APPDATA"] = cls.tmp
+        os.makedirs(os.path.join(cls.tmp, "pdfarranger"))
+        cls.config_file = os.path.join(os.environ["APPDATA"], "pdfarranger", "config.ini")
+        config = configparser.ConfigParser()
+        config.read_string(cls.default_config)
+        if hasattr(cls, "test_config"):
+            config.read_string(cls.test_config)
+        with open(cls.config_file, "w") as f:
+            config.write(f)
 
     def setUp(self):
         group("Running " + self.id())
@@ -388,21 +423,30 @@ class PdfArrangerTest(unittest.TestCase):
             cls.pdfarranger.kill()
         if cls.tmp:
             shutil.rmtree(cls.tmp)
-        if cls.LAST:
-            dogtail_manager.kill()
 
 
+def with_config(test_config):
+    """Decorator for test batch specific configuration settings
+
+    test_config is the config.ini content to be applied on top of the default
+    config defined in PdfArrangerTest.default_config
+    """
+    def f(cls):
+        cls.test_config = test_config
+        return cls
+    return f
+
+
+@with_config("""[preferences]
+                content-loss-warning=True""")
 class TestBatch1(PdfArrangerTest):
     def test_01_import_img(self):
         self._start(["data/screenshot.png"])
         # Handle the "content loss warning" dialog
-        self._wait_cond(lambda: len(self._find_by_role("dialog")) > 0)
         dialog = self._find_by_role("dialog")[-1]
-        self._wait_cond(lambda: len(self._find_by_role("check box", dialog)) > 0)
         check_box = self._find_by_role("check box", dialog)[-1]
         check_box.click()  # Don't show this dialog again
-        button = self._find_by_role("push button", dialog)[-1]
-        button.click()
+        dialog.button("OK").click()
         self._wait_cond(lambda: dialog.dead)
 
     def test_02_properties(self):
@@ -430,8 +474,8 @@ class TestBatch1(PdfArrangerTest):
 
     def test_03_zoom(self):
         app = self._app()
-        zoomoutb = app.child(roleName="push button", description="Zoom Out")
-        zoominb = app.child(roleName="push button", description="Zoom In")
+        zoomoutb = app.child(description="Zoom Out")
+        zoominb = app.child(description="Zoom In")
         # maximum dezoom whatever the initial zoom level
         for _ in range(10):
             zoomoutb.click()
@@ -525,6 +569,7 @@ class TestBatch1(PdfArrangerTest):
         self._quit()
         # check that process actually exit
         self._process().wait(timeout=22)
+        self.assertEqual(self._config()["preferences"]["content-loss-warning"], "False")
 
 
 class TestBatch2(PdfArrangerTest):
@@ -540,8 +585,6 @@ class TestBatch2(PdfArrangerTest):
         self._popupmenu(0, "Crop White Borders")
 
     def test_04_past_overlay(self):
-        if not have_pikepdf3():
-            return
         app = self._app()
         app.keyCombo("<ctrl>c")
         app.keyCombo("Right")
@@ -559,8 +602,6 @@ class TestBatch2(PdfArrangerTest):
 
     def test_05_past_underlay(self):
         """Past a page with overlay under an other page"""
-        if not have_pikepdf3():
-            return
         app = self._app()
         app.keyCombo("<ctrl>c")
         app.keyCombo("Left")
@@ -574,16 +615,15 @@ class TestBatch2(PdfArrangerTest):
         self._save_as_chooser(
             "alltosingle.pdf", ["alltosingle.pdf", "alltosingle-002.pdf"]
         )
-        self._assert_file_size("alltosingle.pdf", 1800 if have_pikepdf3() else 1219)
-        self._assert_file_size("alltosingle-002.pdf", 1544 if have_pikepdf3() else 1219)
-        if have_pikepdf3():
-            self._assert_page_content("alltosingle.pdf", (
-                b'1 0 0 rg 530 180 m 70 180 l 300 580 l h 530 180 m B',
-                b'  /BBox [', b'    68\n', b'    179\n', b'    532\n', b'    582\n',
-                b'1 0 0 rg 530 180 m 70 180 l 300 580 l h 530 180 m B'))
-            self._assert_page_content("alltosingle.pdf", (
-                b'  /BBox [', b'    0\n', b"    0\n", b'    612\n', b'    792\n',
-                b'0 1 0 rg 530 180 m 70 180 l 300 580 l h 530 180 m B'))
+        self._assert_file_size("alltosingle.pdf", 1800)
+        self._assert_file_size("alltosingle-002.pdf", 1544)
+        self._assert_page_content("alltosingle.pdf", (
+            b'1 0 0 rg 530 180 m 70 180 l 300 580 l h 530 180 m B',
+            b'  /BBox [', b'    68\n', b'    179\n', b'    532\n', b'    582\n',
+            b'1 0 0 rg 530 180 m 70 180 l 300 580 l h 530 180 m B'))
+        self._assert_page_content("alltosingle.pdf", (
+            b'  /BBox [', b'    0\n', b"    0\n", b'    612\n', b'    792\n',
+            b'0 1 0 rg 530 180 m 70 180 l 300 580 l h 530 180 m B'))
 
     def test_07_clear(self):
         self._popupmenu(1, "Delete")
@@ -692,7 +732,7 @@ class TestBatch5(PdfArrangerTest):
 
     def test_03_booklet(self):
         self._popupmenu(0, ["Select", "Select All"])
-        self._popupmenu(0, ["Generate Booklet"])
+        self._popupmenu(0, ["Booklet", "Generate (imposition)"])
         self._wait_cond(lambda: len(self._icons()) == 2)
         self._app().child(roleName="layered pane").keyCombo("Home")
         self._assert_page_size(491.1, 213.3)
@@ -708,16 +748,31 @@ class TestBatch5(PdfArrangerTest):
         self._assert_page_size(245.2, 213.3, 0)
         self._assert_page_size(245.2, 213.3, 1)
 
-    def test_05_buggy_exif(self):
+    def test_05_split_booklet(self):
+        self._popupmenu(0, ["Select", "Select All"])
+        self._popupmenu(0, ["Booklet", "Generate (imposition)"])
+        self._popupmenu(0, ["Select", "Select All"])
+        self._popupmenu(0, ["Booklet", "Split (unimposition)"])
+        # OK OK hear me out generating the booklet took 2 pages and made it 2 after the process
+        # by adding two blank pages at the end. So we should have 4 now.
+        # They should have 245.2x213.3mm size like in test_04 because
+        # test.pdf is only loaded once for all operations.
+        self._wait_cond(lambda: len(self._icons()) == 4)
+        self._app().child(roleName="layered pane").keyCombo("Home")
+        self._assert_page_size(245.2, 213.3)
+        self._app().child(roleName="layered pane").keyCombo("End")
+        self._assert_page_size(245.2, 213.3)
+
+    def test_06_buggy_exif(self):
         """Test img2pdf import with buggy EXIF rotation"""
         if not check_img2pdf([0,4,2]):
             print("Ignoring test_05_buggy_exif, img2pdf too old")
             return
         filechooser = self._import_file("tests/1x1.jpg")
         self._wait_cond(lambda: filechooser.dead)
-        self.assertEqual(len(self._icons()), 3)
+        self.assertEqual(len(self._icons()), 5)
 
-    def test_06_quit(self):
+    def test_07_quit(self):
         self._quit_without_saving()
 
 
@@ -727,8 +782,6 @@ class TestBatch6(PdfArrangerTest):
         self._start(["tests/test.pdf"])
 
     def test_02_merge_pages(self):
-        if not have_pikepdf3():
-            return
         self._app().keyCombo("<ctrl>a")
         self._popupmenu(0, "Merge Pages…")
         dialog = self._app().child(roleName="dialog")
@@ -746,12 +799,9 @@ class TestBatch6(PdfArrangerTest):
             cropbuttons[i].typeText("2")
         dialog.child(name="OK").click()
         self._wait_cond(lambda: dialog.dead)
-        if have_pikepdf3():
-            self._assert_page_size(414.5, 268.2)
+        self._assert_page_size(414.5, 268.2)
 
     def test_04_hide_margins(self):
-        if not have_pikepdf3():
-            return
         self._app().keyCombo("<ctrl>a")
         self._assert_selected("1")
         self._app().keyCombo("H")
@@ -782,11 +832,9 @@ class TestBatch6(PdfArrangerTest):
         self._popupmenu(0, ["Select", "Select All"])
         self._mainmenu(["Export", "Export Selection to a Single File…"])
         self._save_as_chooser("hide.pdf")
-        self._assert_file_size("hide.pdf", 1726 if have_pikepdf3() else 1512)
+        self._assert_file_size("hide.pdf", 1726)
 
     def test_06_merge_pages(self):
-        if not have_pikepdf3():
-            return
         self._popupmenu(0, ["Select", "Select All"])
         self._popupmenu(0, "Merge Pages…")
         dialog = self._app().child(roleName="dialog")
@@ -800,10 +848,7 @@ class TestBatch6(PdfArrangerTest):
         self._assert_page_size(829.1, 268.2)
 
     def test_07_quit(self):
-        if have_pikepdf3():
-            self._quit_without_saving()
-        else:
-            self._quit()
+        self._quit_without_saving()
 
 
 class TestBatch7(PdfArrangerTest):
@@ -847,9 +892,6 @@ class TestBatch7(PdfArrangerTest):
 class TestBatch8(PdfArrangerTest):
     """Test Open action"""
 
-    # Kill X11 after that batch
-    LAST = True
-
     def test_01_open_empty(self):
         self._start()
 
@@ -873,3 +915,275 @@ class TestBatch8(PdfArrangerTest):
         """Quit the first instance"""
         self._quit()
         self._process().wait(timeout=22)
+
+class TestBatch9(PdfArrangerTest):
+    """test batch for cli flags """
+
+    def test_01_cli_version(self):
+        """test version flag"""
+        self._start(["--version"], gtk_check=False)
+        time.sleep(0.5)
+        stdout = self._get_stdout()
+        self.assertIn("pikepdf", stdout)
+        self.assertIn("libqpdf", stdout)
+        self.assertIn("OS-", stdout)
+        self.assertIn("OS_Version-", stdout)
+
+
+class TestBatch10(PdfArrangerTest):
+    """Test start-with-empty config setting"""
+
+    def test_01_default(self):
+        """Test default setting"""
+        self._start(["tests/test_encrypted.pdf"])
+        dialog = self._app().child(roleName="dialog")
+        passfield = dialog.child(roleName="password text")
+        passfield.text = "foobar"
+        dialog.child(name="OK").click()
+        self._wait_cond(lambda: dialog.dead)
+
+        self._mainmenu("Preferences")
+        dialog = self._app().child(roleName="dialog")
+        savepanel_name = "Saving/exporting to single file"
+        if have_pikepdf8():
+            savepanel = dialog.child(name=savepanel_name)
+            checkboxes = self._find_by_role("check box", savepanel)
+            self.assertTrue(checkboxes[0].checked)
+        else:
+            panels = self._find_by_role("panel", dialog)
+            self.assertNotIn(savepanel_name, [p.name for p in panels])
+        dialog.child(name="OK").click()
+        self._wait_cond(lambda: dialog.dead)
+
+        self._mainmenu("Save As…")
+        self._save_as_chooser("encrypted.pdf", ["encrypted.pdf"] )
+        if have_pikepdf8():
+            with warnings.catch_warnings(record=True) as w:
+                with pikepdf.open(os.path.join(self.__class__.tmp, "encrypted.pdf"), password="foobar"):
+                    pass
+            # there should be no warning that no password was needed to open this PDF
+            self.assertEqual(len(w), 0)
+        else:
+            with pikepdf.open(os.path.join(self.__class__.tmp, "encrypted.pdf")):
+                # there should be no pikepdf._core.PasswordError for pikepdf < 8
+                pass
+
+    def test_02_legacy(self):
+        """Test legacy setting"""
+        if have_pikepdf8():
+            self._mainmenu("Preferences")
+            dialog = self._app().child(roleName="dialog")
+            savepanel = dialog.child(name="Saving/exporting to single file")
+            checkboxes = self._find_by_role("check box", savepanel)
+            checkboxes[0].click()
+            dialog.child(name="OK").click()
+            self.assertFalse(checkboxes[0].checked)
+            self._wait_cond(lambda: dialog.dead)
+
+        self._mainmenu("Save As…")
+        self._save_as_chooser("unencrypted.pdf", ["unencrypted.pdf"])
+        with pikepdf.open(os.path.join(self.__class__.tmp, "unencrypted.pdf")):
+            # there should be no pikepdf._core.PasswordError
+            pass
+
+    def test_03_quit(self):
+        self._quit()  # save config
+        self._process().wait(timeout=22)
+        if have_pikepdf8():
+            self.assertEqual(self._config()["preferences"]["start-with-empty"], "True")
+
+
+class TestBatch11(PdfArrangerTest):
+    """Test show-save-warnings config setting and metadata"""
+
+    def test_01_save_and_disable_warning(self):
+        """Show warning discarded metadata (default)"""
+        self._start(["tests/test_metadata1.pdf"])
+        self._mainmenu("Save")
+        self._save_as_chooser("output1.pdf")
+        alert = self._find_by_role("alert")[0]
+        from dogtail import predicate
+        alert.findChild(predicate.IsNamed("Saving produced some warnings"), requireResult=True)
+        check_box = self._find_by_role("check box", alert)[0]
+        check_box.click()  # Don't show warnings when saving again
+        alert.button("OK").click()
+        self._wait_cond(lambda: alert.dead)
+
+    def test_02_save_without_warning(self):
+        """Don't show warning discarded metadata"""
+        self._mainmenu("Save")
+        self._wait_saving()
+
+    def test_03_retain_metadata(self):
+        """Merge metadata into first file and don't overwrite from info dict"""
+        filechooser = self._import_file("tests/test_metadata2.pdf")
+        self._wait_cond(lambda: filechooser.dead)
+        self._mainmenu("Save As…")
+        self._save_as_chooser("output2.pdf", ["output2.pdf"])
+        with pikepdf.Pdf.open(os.path.join(self.__class__.tmp, "output2.pdf")) as pdf:
+            del pdf.docinfo["/Producer"]  # pikepdf version will vary
+            expected = {
+                "/Title": "Title1",
+                "/Author": "First; Second",
+                "/Subject": "Subject2",
+                "/Custom": "info dict entry",
+            }
+            if not have_pikepdf8():
+                del expected["/Custom"]
+            self.assertDictEqual(dict(pdf.docinfo), expected)
+            with pdf.open_metadata(False, False) as meta:
+                del meta["pdf:Producer"]      # pikepdf version will vary
+                del meta["xmp:MetadataDate"]  # will vary
+                exptected = {
+                    # xmp metadata with info dict equivalents
+                    "{http://purl.org/dc/elements/1.1/}title": "Title1",
+                    "{http://purl.org/dc/elements/1.1/}creator": ["First", "Second"],
+                    "{http://purl.org/dc/elements/1.1/}description": "Subject2",
+                    # xmp metadata without info dict equivalents
+                    "{http://purl.org/dc/elements/1.1/}identifier": "ID1",
+                    "{http://purl.org/dc/elements/1.1/}source": "Source2",
+                    "{http://ns.adobe.com/xap/1.0/}label": "Label1",
+                }
+                self.assertDictEqual(dict(meta), exptected)
+
+    def test_04_quit(self):
+        """Test config settings persistence"""
+        self._quit()
+        self._process().wait(timeout=22)
+        self.assertEqual(self._config()["preferences"]["show-save-warnings"], "False")
+
+
+class TestBatch12(PdfArrangerTest):
+    """Test printing"""
+
+    def test_01_open_documents(self):
+        self._start(["data/screenshot.png", "tests/test.pdf", "tests/test_metadata1.pdf"])
+        # Remove last page
+        self._popupmenu(3, ["Cut"])
+
+    def test_02_print_all_to_pdf(self):
+        """Print with Gtk.PrintUnixDialog"""
+        self._mainmenu(["Print…"])
+        print_dialog = self._app().child(roleName="dialog")
+        print_dialog.child(name="Print to File").click()
+        from dogtail import rawinput
+        rawinput.keyCombo("Tab")
+        # Open "file chooser" to set the output name
+        rawinput.keyCombo("enter")
+        filechooser = self._app().child(roleName="file chooser")
+        output = os.path.join(self.__class__.tmp, 'output.pdf')
+        filechooser.child(roleName="text").text = output
+        filechooser.button("Select").click()
+        self._wait_cond(lambda: filechooser.dead)
+        print_dialog.button("Print").click()
+        self._wait_cond(lambda: print_dialog.dead)
+        # Import the printed pdf
+        filechooser = self._import_file(output)
+        self._wait_cond(lambda: filechooser.dead)
+        self.assertEqual(len(self._icons()), 6)
+
+    def test_03_quit(self):
+        self._quit_without_saving()
+
+
+class TestBatch13(PdfArrangerTest):
+    """Test export as jpg images"""
+
+    def test_01_import_pdf(self):
+        self._start(["tests/test.pdf"])
+
+    def test_02_export_as_png(self):
+        """Export image at default 150 pixels/inch"""
+        self._popupmenu(None, ["Select", "Select All"])
+        self._mainmenu(["Export", "Export Selection to JPG Images…"])
+        self._save_as_chooser("image-001.jpg")
+
+    def test_03_import_png(self):
+        """Import the two images that were created"""
+        tmp = self.__class__.tmp
+        filename = os.path.join(tmp, "image-001.jpg")
+        filechooser = self._import_file(filename)
+        self._wait_cond(lambda: filechooser.dead)
+        filename = os.path.join(tmp, "image-002.jpg")
+        filechooser = self._import_file(filename)
+        self._wait_cond(lambda: filechooser.dead)
+        self.assertEqual(len(self._icons()), 4)
+        self._app().child(roleName="layered pane").grabFocus()
+        self._app().keyCombo("End")
+        self._assert_page_size(215.9, 279.4)
+
+    def test_04_quit(self):
+        self._quit_without_saving()
+
+
+class TestBatch14(PdfArrangerTest):
+    """Test export as png images"""
+
+    def test_01_import_pdf(self):
+        self._start(["tests/test.pdf"])
+
+    def test_02_export_as_png(self):
+        """Export image at default 150 pixels/inch"""
+        self._popupmenu(None, ["Select", "Select All"])
+        self._mainmenu(["Export", "Export Selection to PNG Images…"])
+        self._save_as_chooser("image-001.png")
+
+    def test_03_close(self):
+        """Test close application"""
+        self._app().child(roleName="layered pane").grabFocus()
+        self._app().keyCombo("<ctrl>W")
+        self.assertEqual(len(self._icons()), 0)
+
+    def test_04_import_png(self):
+        """Import the two images that were created"""
+        tmp = self.__class__.tmp
+        filename1 = os.path.join(tmp, "image-001.png")
+        filename2 = os.path.join(tmp, "image-002.png")
+        filechooser = self._import_file(filename1)
+        self._wait_cond(lambda: filechooser.dead)
+        filechooser = self._import_file(filename2)
+        self._wait_cond(lambda: filechooser.dead)
+        self.assertEqual(len(self._icons()), 2)
+        self._app().child(roleName="layered pane").grabFocus()
+        self._app().keyCombo("End")
+        self._assert_page_size(215.9, 279.4)
+
+    def test_05_quit(self):
+        self._quit_without_saving()
+
+
+class TestBatch15(PdfArrangerTest):
+    """Test export as Rasterized PDF"""
+
+    def test_01_import_pdf(self):
+        self._start(["tests/test.pdf"])
+
+    def test_02_export_as_pdf(self):
+        """Export image at 150 pixels/inch as optimized greyscale"""
+        self._mainmenu("Preferences")
+        dialog = self._app().child(roleName="dialog")
+        imagepanel = dialog.child(name="Image Export")
+        checkboxes = self._find_by_role("check box", imagepanel)
+        checkboxes[0].click()  # Greyscale
+        checkboxes[1].click()  # Optimize
+        dialog.child(name="OK").click()
+        self._wait_cond(lambda: dialog.dead)
+        self._popupmenu(1, ["Rotate Left"])
+        self._app().child(roleName="layered pane").grabFocus()
+        self._popupmenu(None, ["Select", "Select All"])
+        self._mainmenu(["Export", "Export Selection to Rasterized PDF (png)…"])
+        self._save_as_chooser("pdf-image-001.pdf")
+
+    def test_03_import_png(self):
+        """Import the pdf that was created"""
+        tmp = self.__class__.tmp
+        filename = os.path.join(tmp, "pdf-image-001.pdf")
+        filechooser = self._import_file(filename)
+        self._wait_cond(lambda: filechooser.dead)
+        self.assertEqual(len(self._icons()), 4)
+        self._app().child(roleName="layered pane").grabFocus()
+        self._app().keyCombo("End")
+        self._assert_page_size(279.4, 215.9)
+
+    def test_04_quit(self):
+        self._quit_without_saving()

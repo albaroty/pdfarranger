@@ -65,6 +65,26 @@ along with PDF Arranger.  If not, see <http://www.gnu.org/licenses/>.
             <attribute name="label" translatable="yes">Export _All Pages to Individual Files…</attribute>
             <attribute name="action">win.export-all</attribute>
           </item>
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _PNG Images…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">4</attribute>
+          </item>
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _JPG Images…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">5</attribute>
+          </item>
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _Rasterized PDF (png)…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">6</attribute>
+          </item>
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _Rasterized PDF (jpg)…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">7</attribute>
+          </item>
         </section>
       </submenu>
       <item>
@@ -194,10 +214,17 @@ along with PDF Arranger.  If not, see <http://www.gnu.org/licenses/>.
           <attribute name="label" translatable="yes">Insert Blan_k Page…</attribute>
           <attribute name="action">win.insert-blank-page</attribute>
         </item>
-        <item>
-          <attribute name="label" translatable="yes">Generate Booklet</attribute>
-          <attribute name="action">win.generate-booklet</attribute>
-        </item>
+        <submenu>
+          <attribute name="label" translatable="yes">_Booklet</attribute>
+          <item>
+            <attribute name="label" translatable="yes">_Generate (imposition)</attribute>
+            <attribute name="action">win.generate-booklet</attribute>
+          </item>
+          <item>
+            <attribute name="label" translatable="yes">_Split (unimposition)</attribute>
+            <attribute name="action">win.split-booklet</attribute>
+          </item>
+        </submenu>
       </section>
     </submenu>
     <submenu>
@@ -237,6 +264,11 @@ along with PDF Arranger.  If not, see <http://www.gnu.org/licenses/>.
           <attribute name="label" translatable="yes">_Invert Selection</attribute>
           <attribute name="action">win.select</attribute>
           <attribute name="target" type="i">6</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">Select _Range</attribute>
+          <attribute name="action">win.select</attribute>
+          <attribute name="target" type="i">7</attribute>
         </item>
       </section>
     </submenu>
@@ -402,6 +434,11 @@ along with PDF Arranger.  If not, see <http://www.gnu.org/licenses/>.
             <attribute name="action">win.select</attribute>
             <attribute name="target" type="i">6</attribute>
           </item>
+          <item>
+            <attribute name="label" translatable="yes">Select _Range</attribute>
+            <attribute name="action">win.select</attribute>
+            <attribute name="target" type="i">7</attribute>
+          </item>
         </section>
       </submenu>
     </section>
@@ -452,10 +489,17 @@ along with PDF Arranger.  If not, see <http://www.gnu.org/licenses/>.
         <attribute name="label" translatable="yes">Insert Blan_k Page…</attribute>
         <attribute name="action">win.insert-blank-page</attribute>
       </item>
-      <item>
-        <attribute name="label" translatable="yes">Generate Booklet</attribute>
-        <attribute name="action">win.generate-booklet</attribute>
-      </item>
+      <submenu>
+        <attribute name="label" translatable="yes">_Booklet</attribute>
+        <item>
+          <attribute name="label" translatable="yes">_Generate (imposition)</attribute>
+          <attribute name="action">win.generate-booklet</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Split (unimposition)</attribute>
+          <attribute name="action">win.split-booklet</attribute>
+        </item>
+      </submenu>
     </section>
     <section>
       <submenu>
@@ -475,7 +519,26 @@ along with PDF Arranger.  If not, see <http://www.gnu.org/licenses/>.
             <attribute name="label" translatable="yes">Export _All Pages to Individual Files…</attribute>
             <attribute name="action">win.export-all</attribute>
           </item>
-
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _PNG Images…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">4</attribute>
+          </item>
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _JPG Images…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">5</attribute>
+          </item>
+          <item>
+            <attribute name="label" translatable="yes">Export Selection to _Rasterized PDF (png)…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">6</attribute>
+          </item>
+            <item>
+            <attribute name="label" translatable="yes">Export Selection to _Rasterized PDF (jpg)…</attribute>
+            <attribute name="action">win.export-selection</attribute>
+            <attribute name="target" type="i">7</attribute>
+          </item>
         </section>
       </submenu>
     </section>

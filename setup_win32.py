@@ -1,4 +1,4 @@
-VERSION='1.11.0'
+VERSION='1.12.0'
 
 from cx_Freeze import setup, Executable
 import os
@@ -120,7 +120,7 @@ for ns in required_gi_namespaces:
     addfile("lib/girepository-1.0/{}.typelib".format(ns))
 
 addfile("lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-bmp.dll")
-addfile("lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.dll")
+addfile("lib/gdk-pixbuf-2.0/2.10.0/loaders/pixbufloader_svg.dll")
 addfile("lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-png.dll")
 addfile("lib/gdk-pixbuf-2.0/2.10.0/loaders.cache")
 addfile("share/glib-2.0/schemas/gschemas.compiled")
@@ -145,7 +145,13 @@ def get_target_name(suffix):
 
 
 msi_options = dict(
-    upgrade_code='{ab1752a6-575c-42e1-a261-b85cb8a6b524}'
+    upgrade_code='{ab1752a6-575c-42e1-a261-b85cb8a6b524}',
+    extensions=[{
+        "extension": "pdf",
+        "verb": "open",
+        "executable": "pdfarranger.exe",
+        "argument": '"%1"',
+    }]
 )
 
 
@@ -175,9 +181,11 @@ class bdist_zip(distutils.cmd.Command):
         shutil.rmtree(build_exe.build_exe)
 
 
-setup(name='pdfarranger',
+setup(name='PDF Arranger',
+      author='The PDF Arranger team',
       version=VERSION,
-      description='A simple application for PDF Merging, Rearranging, and Splitting',
+      description='PDF Arranger',
+      long_description='A simple application for PDF Merging, Rearranging, and Splitting',
       options=dict(build_exe=build_options, bdist_msi=msi_options),
       cmdclass={'bdist_zip': bdist_zip},
       packages=['pdfarranger'],

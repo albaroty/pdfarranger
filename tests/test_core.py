@@ -56,14 +56,14 @@ class BasePageTest(PTest):
 
     def test01(self):
         """Test width | height | size_in_points"""
-        self.assertAlmostEquals(self._page1().size_in_points()[0], 140.462)
-        self.assertAlmostEquals(self._page1().width_in_points(), 140.462)
-        self.assertAlmostEquals(self._page1().size_in_points()[1], 120.396)
-        self.assertAlmostEquals(self._page1().height_in_points(), 120.396)
-        self.assertAlmostEquals(self._page1_90().size_in_points()[0], 120.396)
-        self.assertAlmostEquals(self._page1_90().width_in_points(), 120.396)
-        self.assertAlmostEquals(self._page1_90().size_in_points()[1], 140.462)
-        self.assertAlmostEquals(self._page1_90().height_in_points(), 140.462)
+        self.assertAlmostEqual(self._page1().size_in_points()[0], 140.462)
+        self.assertAlmostEqual(self._page1().width_in_points(), 140.462)
+        self.assertAlmostEqual(self._page1().size_in_points()[1], 120.396)
+        self.assertAlmostEqual(self._page1().height_in_points(), 120.396)
+        self.assertAlmostEqual(self._page1_90().size_in_points()[0], 120.396)
+        self.assertAlmostEqual(self._page1_90().width_in_points(), 120.396)
+        self.assertAlmostEqual(self._page1_90().size_in_points()[1], 140.462)
+        self.assertAlmostEqual(self._page1_90().height_in_points(), 140.462)
 
     def test02(self):
         """Test rotate_times"""
@@ -104,13 +104,13 @@ class PageTest(PTest):
         self.assertEqual(repr(p), repr(d))
         p.rotate(90)
         self.assertEqual(repr(d), repr(self._page1()))
-        self.assertNotEquals(repr(p), repr(self._page1()))
+        self.assertNotEqual(repr(p), repr(self._page1()))
 
     def test03(self):
         """Test serialize"""
         self.assertEqual(self._page1().serialize(),
-                         'copy\n2\nbase\n0\n2\n0.1\n0.2\n0.3\n0.4\n0.11\n0.21\n0.31\n0.41\n'
-                         'lcopy\n4\n90\n2\nOVERLAY\n0.11\n0.21\n0.31\n0.41\n0.12\n0.22\n0.32\n0.42')
+                         'copy///2///base///0///2///0.1///0.2///0.3///0.4///0.11///0.21///0.31///0.41///'
+                         'lcopy///4///90///2///OVERLAY///0.11///0.21///0.31///0.41///0.12///0.22///0.32///0.42')
 
     def test04(self):
         """Test width | height | size_in_pixel"""
@@ -155,12 +155,12 @@ class LayerPageTest(PTest):
         self.assertEqual(repr(p), repr(d))
         p.rotate(90)
         self.assertEqual(repr(d), repr(self._lpage1()))
-        self.assertNotEquals(repr(p), repr(self._lpage1()))
+        self.assertNotEqual(repr(p), repr(self._lpage1()))
 
     def test03(self):
         """Test serialize"""
         self.assertEqual(self._lpage1().serialize(),
-                         'lcopy\n4\n90\n2\nOVERLAY\n0.11\n0.21\n0.31\n0.41\n0.12\n0.22\n0.32\n0.42')
+                         'lcopy///4///90///2///OVERLAY///0.11///0.21///0.31///0.41///0.12///0.22///0.32///0.42')
 
 
 def load_tests(loader, tests, ignore):
